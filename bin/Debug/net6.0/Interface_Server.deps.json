@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v6.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v6.0": {
+      "Interface_Server/1.0.0": {
+        "runtime": {
+          "Interface_Server.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Interface_Server/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
