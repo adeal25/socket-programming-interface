@@ -14,14 +14,11 @@ namespace Server
         private static Socket listener;
         private static bool isListening;
         private static bool isRunning = true;
-        private static bool SedangMengirim = false;
+        private static bool isSending = false;
         private static Socket clientHandler;
         private static bool receivedNAK = false; // Flag to track NAK reception
         private static bool receivedACK = false; // Flag to track NAK reception
         private static int retryCount = 0; // Flag to track NAK reception
-
-        
-        
         private static EventWaitHandle sendHandle = new AutoResetEvent(true);
 
         static void Main(string[] args)
@@ -103,35 +100,18 @@ namespace Server
             try
             {
                 while (isRunning)
-                {
-                    // receiveHandle.WaitOne();
-
-                    
+                {                    
                     byte[] receiveBuffer = new byte[2048];
                     int byteReceived = clientHandler.Receive(receiveBuffer);
 
-                    
                     List<byte> finalMsgBuff = new List<byte>();
                     List<byte> finalMessage = new List<byte>();
-
                     
                     for (int i = 0; i<byteReceived; i++)
                     {
-                        if (SedangMengirim == true)
+                        if (isSending == true)
                         {                        
-                            if (receiveBuffer[i] == 0x06)
-                            {
-                                LogWithTime("INFO","Server terima: <ACK>");
-                                receivedACK = true;
-                                sendHandle.Set();
-                            }
-                            else if ( receiveBuffer[i] == 0x15)
-                            {
-                                LogWithTime("INFO","Server terima: <NAK>");
-                                receivedNAK = true;
-                                sendHandle.Set();
-                                
-                            }
+                            HandleAckNak(receiveBuffer[i]);
                         }
                         else
                         {
@@ -146,6 +126,7 @@ namespace Server
                                 {
                                     byte[] messageBuffer = new byte[1024];
                                     int msgByteReceived = clientHandler.Receive(messageBuffer);
+                                    // Console.WriteLine(Encoding.ASCII.GetString(messageBuffer));
                                     
                                     for (int j = 0; j < msgByteReceived; j++)
                                     {
@@ -157,6 +138,7 @@ namespace Server
                                     int etbIdk = finalMsgBuff.LastIndexOf(0x23);
                                     int etxIdk = finalMsgBuff.LastIndexOf(0x03);
                                     // Check if STX is found and either ETB or ETX is found
+
                                     if (stxIdk != -1 && (etbIdk != -1 || etxIdk != -1))
                                     {
                                         int endIdk = etbIdk != -1 ? etbIdk : etxIdk;
@@ -177,28 +159,23 @@ namespace Server
 
                                         byte cs1Byte = finalMsgBuff[endIdk - 2];
                                         byte cs2Byte = finalMsgBuff[endIdk - 1];
-                                        string receivedCs1 =  cs1Byte.ToString("X2")[1].ToString();
-                                        string receivedCs2 =  cs2Byte.ToString("X2")[1].ToString();
+                                        string cs1Val =  cs1Byte.ToString("X2")[1].ToString();
+                                        string cs2Val =  cs2Byte.ToString("X2")[1].ToString();
 
                                         // Validate Payload data by calculating checksum while receiving data transmited
-                                        if (ValidateChecksum(chunkBytes, receivedCs1, receivedCs2))
+                                        if (ValidateChecksum(chunkBytes, cs1Val, cs2Val))
                                         {
                                             LogWithTime("DEBUG","Checksum Cocok, Server kirim: <ACK>");
                                             clientHandler.Send(new byte[] {0x06});
                                             string chunkMessage = Encoding.ASCII.GetString(chunkBytes);
                                             
-                                            
                                             if (etbIdk != -1)
                                             {
                                                 LogWithTime("INFO",$"<STX>{chunkMessage}<ETB>");
-                                                // ParseData(chunkMessage);
-                                                // Console.WriteLine("<ETB>");
                                             }
                                             else if (etxIdk != -1)
                                             {
                                                 LogWithTime("INFO",$"<STX>{chunkMessage}<ETX>");
-                                                // ParseData(chunkMessage);
-                                                // Console.WriteLine("<ETX>");
                                             }
                                         
                                         }
@@ -214,14 +191,7 @@ namespace Server
             
                                     if (finalMsgBuff.IndexOf(0x04) != -1)
                                     {   
-                                        LogWithTime("INFO", "Akhir transmisi pesan: <EOT>");
-                                        LogWithTime("INFO", "Server terima semua pesan:");
-
-                                        string fullMessage = Encoding.ASCII.GetString(finalMessage.ToArray());
-                                        ParseData(fullMessage);
-
-                                        finalMsgBuff.Clear();
-                                        finalMessage.Clear();
+                                        HandleEotReceived(finalMsgBuff, finalMessage);
                                         break;
                                     }
                                 }
@@ -243,6 +213,35 @@ namespace Server
             }
             
         }
+
+        private static void HandleAckNak(byte receivedByte)
+        {
+            if (receivedByte == 0x06)
+            {
+                LogWithTime("INFO","Server terima: <ACK>");
+                sendHandle.Set();
+            }
+            else if (receivedByte == 0x15)
+            {
+                LogWithTime("INFO","Server terima: <NAK>");
+                sendHandle.Set();
+            }
+        }
+
+        private static void HandleEotReceived(List<byte> finalMsgBuff, List<byte> finalMessage)
+        {   
+            LogWithTime("INFO", "Akhir transmisi pesan: <EOT>");
+            LogWithTime("INFO", "Server terima semua pesan:");
+
+            string fullMessage = Encoding.ASCII.GetString(finalMessage.ToArray());
+            ParseData(fullMessage);
+
+            finalMsgBuff.Clear();
+            finalMessage.Clear();
+            
+        }
+    
+
 
         private static void ParseData(string input)
         {
@@ -302,7 +301,7 @@ namespace Server
 
                 
                 KirimDariAwal:
-                SedangMengirim = true;
+                isSending = true;
                 bool sendSuccess = false;
                 byte[] soh = new byte[] { 0x01 };
                 clientHandler.Send(soh);
@@ -364,7 +363,7 @@ namespace Server
                             byte[] eot = new byte[] { 0x04 };
                             clientHandler.Send(eot);
                             LogWithTime("DEBUG", $"Server kirim: <EOT>");
-                            SedangMengirim = false;
+                            isSending = false;
                             break;
                             
                         }
@@ -380,7 +379,7 @@ namespace Server
                 {
                     clientHandler.Send(new byte[] { 0x04 });
                     LogWithTime("DEBUG", $"Server kirim: <EOT>");
-                    SedangMengirim = false;
+                    isSending = false;
                     break;
                 } 
             }
@@ -416,16 +415,16 @@ namespace Server
             return checksum.ToString("X2");
         }
 
-        private static bool ValidateChecksum(byte[] chunkBytes, string receivedCs1, string receivedCs2)
+        private static bool ValidateChecksum(byte[] chunkBytes, string cs1Val, string cs2Val)
         {
             // Now that the Checksum method returns a single string instead of an array, you need to modify this method accordingly.
             string calculatedChecksum = Checksum(chunkBytes);
             
             // Log the received and calculated checksums for debugging.
-            LogWithTime("INFO", $"Checksum received: {receivedCs1}{receivedCs2}, Calculated: {calculatedChecksum}");
+            LogWithTime("INFO", $"Checksum received: {cs1Val}{cs2Val}, Calculated: {calculatedChecksum}");
 
             // Compare the entire checksum strings instead of splitting them.
-            return calculatedChecksum == $"{receivedCs1}{receivedCs2}";
+            return calculatedChecksum == $"{cs1Val}{cs2Val}";
         }
     }
 }
