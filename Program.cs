@@ -20,6 +20,9 @@ namespace Server
         private static bool receivedACK = false; // Flag to track NAK reception
         private static int retryCount = 0; // Flag to track NAK reception
         private static EventWaitHandle sendHandle = new AutoResetEvent(true);
+        private static bool startOfMessage = false;
+        private static List<byte> finalMsgBuff = new List<byte>();
+        private static List<byte> finalMessage = new List<byte>();
 
         static void Main(string[] args)
         {
@@ -104,8 +107,7 @@ namespace Server
                     byte[] receiveBuffer = new byte[2048];
                     int byteReceived = clientHandler.Receive(receiveBuffer);
 
-                    List<byte> finalMsgBuff = new List<byte>();
-                    List<byte> finalMessage = new List<byte>();
+                    
                     
                     for (int i = 0; i<byteReceived; i++)
                     {
@@ -117,84 +119,146 @@ namespace Server
                         {
                             if (receiveBuffer[i] == 0x01)
                             {
-                                LogWithTime("INFO","Server terima: <SOH>");
-                                // receiveHandle.Set();
-                                clientHandler.Send(new byte[] {0x06});
-                                LogWithTime("DEBUG","Server kirim: <ACK>");
+                                HandleAckNak(receiveBuffer[i]);
+                                
 
-                                while (true)
-                                {
-                                    byte[] messageBuffer = new byte[1024];
-                                    int msgByteReceived = clientHandler.Receive(messageBuffer);
-                                    // Console.WriteLine(Encoding.ASCII.GetString(messageBuffer));
+                                // while (true)
+                                // {
+                                //     byte[] finalMsgBuff = new byte[1024];
+                                //     int msgByteReceived = clientHandler.Receive(finalMsgBuff);
+                                //     // Console.WriteLine(Encoding.ASCII.GetString(finalMsgBuff));
                                     
-                                    for (int j = 0; j < msgByteReceived; j++)
-                                    {
-                                        finalMsgBuff.Add(messageBuffer[j]);                                        
-                                    }
-                                    // LogWithTime("INFO", "finalMsgBuff saat ini: " + BitConverter.ToString(finalMsgBuff.ToArray()));
+                                //     for (int j = 0; j < msgByteReceived; j++)
+                                //     {
+                                //         finalMsgBuff.Add(finalMsgBuff[j]);                                        
+                                //     }
+                                //     // LogWithTime("INFO", "finalMsgBuff saat ini: " + BitConverter.ToString(finalMsgBuff.ToArray()));
             
-                                    int stxIdk = finalMsgBuff.IndexOf(0x02);
-                                    int etbIdk = finalMsgBuff.LastIndexOf(0x23);
-                                    int etxIdk = finalMsgBuff.LastIndexOf(0x03);
-                                    // Check if STX is found and either ETB or ETX is found
+                                //     int stxIdk = finalMsgBuff.IndexOf(0x02);
+                                //     int etbIdk = finalMsgBuff.LastIndexOf(0x23);
+                                //     int etxIdk = finalMsgBuff.LastIndexOf(0x03);
+                                //     // Check if STX is found and either ETB or ETX is found
 
-                                    if (stxIdk != -1 && (etbIdk != -1 || etxIdk != -1))
-                                    {
-                                        int endIdk = etbIdk != -1 ? etbIdk : etxIdk;
+                                //     if (stxIdk != -1 && (etbIdk != -1 || etxIdk != -1))
+                                //     {
+                                //         int endIdk = etbIdk != -1 ? etbIdk : etxIdk;
 
-                                        if (endIdk > stxIdk)
-                                        {
-                                            while (etxIdk > stxIdk && etxIdk > endIdk)
-                                            {
-                                                endIdk = etxIdk;
-                                            }
-                                        }
-                                        int chunkLength = endIdk - stxIdk - 1;
+                                //         if (endIdk > stxIdk)
+                                //         {
+                                //             while (etxIdk > stxIdk && etxIdk > endIdk)
+                                //             {
+                                //                 endIdk = etxIdk;
+                                //             }
+                                //         }
+                                //         int chunkLength = endIdk - stxIdk - 1;
 
-                                        byte[] chunkBytes = finalMsgBuff.GetRange(stxIdk + 1, chunkLength - 3).ToArray();
-                                        finalMessage.AddRange(chunkBytes);
-                                        finalMessage.Add(0x0A);
-                                        // Console.WriteLine(chunkBytes);
+                                //         byte[] chunkBytes = finalMsgBuff.GetRange(stxIdk + 1, chunkLength - 3).ToArray();
+                                //         finalMessage.AddRange(chunkBytes);
+                                //         finalMessage.Add(0x0A);
+                                //         // Console.WriteLine(chunkBytes);
 
-                                        byte cs1Byte = finalMsgBuff[endIdk - 2];
-                                        byte cs2Byte = finalMsgBuff[endIdk - 1];
-                                        string cs1Val =  cs1Byte.ToString("X2")[1].ToString();
-                                        string cs2Val =  cs2Byte.ToString("X2")[1].ToString();
+                                //         byte cs1Byte = finalMsgBuff[endIdk - 2];
+                                //         byte cs2Byte = finalMsgBuff[endIdk - 1];
+                                //         string cs1Val =  cs1Byte.ToString("X2")[1].ToString();
+                                //         string cs2Val =  cs2Byte.ToString("X2")[1].ToString();
 
-                                        // Validate Payload data by calculating checksum while receiving data transmited
-                                        if (ValidateChecksum(chunkBytes, cs1Val, cs2Val))
-                                        {
-                                            LogWithTime("DEBUG","Checksum Cocok, Server kirim: <ACK>");
-                                            clientHandler.Send(new byte[] {0x06});
-                                            string chunkMessage = Encoding.ASCII.GetString(chunkBytes);
+                                //         // Validate Payload data by calculating checksum while receiving data transmited
+                                //         if (ValidateChecksum(chunkBytes, cs1Val, cs2Val))
+                                //         {
+                                //             LogWithTime("DEBUG","Checksum Cocok, Server kirim: <ACK>");
+                                //             clientHandler.Send(new byte[] {0x06});
+                                //             string chunkMessage = Encoding.ASCII.GetString(chunkBytes);
                                             
-                                            if (etbIdk != -1)
-                                            {
-                                                LogWithTime("INFO",$"<STX>{chunkMessage}<ETB>");
-                                            }
-                                            else if (etxIdk != -1)
-                                            {
-                                                LogWithTime("INFO",$"<STX>{chunkMessage}<ETX>");
-                                            }
+                                //             if (etbIdk != -1)
+                                //             {
+                                //                 LogWithTime("INFO",$"<STX>{chunkMessage}<ETB>");
+                                //             }
+                                //             else if (etxIdk != -1)
+                                //             {
+                                //                 LogWithTime("INFO",$"<STX>{chunkMessage}<ETX>");
+                                //             }
                                         
-                                        }
-                                        else
+                                //         }
+                                //         else
+                                //         {
+                                //             LogWithTime("DEBUG","Checksum tidak valid, Server kirim: <NAK>");
+                                //             clientHandler.Send(new byte[] {0x15});
+                                //             // break;
+                                //         }
+            
+                                //         finalMsgBuff.RemoveRange(0, endIdk + 1);
+                                //     }
+            
+                                //     if (finalMsgBuff.IndexOf(0x04) != -1)
+                                //     {   
+                                //         HandleEotReceived(finalMsgBuff, finalMessage);
+                                //         break;
+                                //     }
+                                // }
+                            }
+                            else if (receiveBuffer[i] == 0x02)
+                            {
+                                startOfMessage = true;
+                            }
+                            else if (receiveBuffer[i] == 0x03 || receiveBuffer[i] == 0x23)
+                            {
+                                startOfMessage = false;
+                            
+                                if (finalMsgBuff.Count >= 2)
+                                {
+                                    byte cs1Byte = finalMsgBuff[^2]; // Second last byte
+                                    byte cs2Byte = finalMsgBuff[^1]; // Last byte
+                                    string cs1Val = cs1Byte.ToString("X2")[1].ToString();
+                                    string cs2Val = cs2Byte.ToString("X2")[1].ToString();
+                            
+                                    byte[] chunkBytes = finalMsgBuff.ToArray();
+                                    finalMsgBuff.RemoveRange(finalMsgBuff.Count - 2, 2); // Remove checksum bytes
+                            
+                                    if (ValidateChecksum(chunkBytes, cs1Val, cs2Val))
+                                    {
+                                        LogWithTime("DEBUG", "Checksum Cocok, Server kirim: <ACK>");
+                                        clientHandler.Send(new byte[] { 0x06 });
+                            
+                                        finalMessage.AddRange(finalMsgBuff); // Add message content without checksum
+                                        finalMessage.Add(0x0A); // Add newline for separation
+                            
+                                        string messageContent = Encoding.ASCII.GetString(finalMsgBuff.ToArray());
+                            
+                                        if (receiveBuffer[i] == 0x23) // ETB
                                         {
-                                            LogWithTime("DEBUG","Checksum tidak valid, Server kirim: <NAK>");
-                                            clientHandler.Send(new byte[] {0x15});
-                                            // break;
+                                            LogWithTime("INFO", $"<STX>{messageContent}<ETB>");
                                         }
-            
-                                        finalMsgBuff.RemoveRange(0, endIdk + 1);
+                                        else if (receiveBuffer[i] == 0x03) // ETX
+                                        {
+                                            LogWithTime("INFO", $"<STX>{messageContent}<ETX>");
+                                        }
                                     }
-            
-                                    if (finalMsgBuff.IndexOf(0x04) != -1)
-                                    {   
-                                        HandleEotReceived(finalMsgBuff, finalMessage);
-                                        break;
+                                    else
+                                    {
+                                        LogWithTime("DEBUG", "Checksum tidak valid, Server kirim: <NAK>");
+                                        clientHandler.Send(new byte[] { 0x15 });
                                     }
                                 }
+                                else
+                                {
+                                    LogWithTime("ERROR", "Message buffer too short to contain checksum.");
+                                }
+                            
+                                finalMsgBuff.Clear();
+                            
+                                if (receiveBuffer[i] == 0x03)
+                                {
+                                    break;
+                                }
+                            }
+                            else if (receiveBuffer[i] == 0x04)
+                            {
+                                HandleEotReceived(finalMsgBuff, finalMessage);
+                                break;
+                            }
+                            else if (startOfMessage)
+                            {
+                                finalMsgBuff.Add(receiveBuffer[i]);
                             }
                             
                             
@@ -310,20 +374,20 @@ namespace Server
                 sendHandle.WaitOne();
                 // sendHandle.Reset();
 
-                byte[] messageBuffer = Encoding.ASCII.GetBytes(serverMessage);
+                byte[] finalMsgBuff = Encoding.ASCII.GetBytes(serverMessage);
                 int bufferSize = 255;
 
                 
-                for (int i = 0; i < messageBuffer.Length; i += bufferSize)
+                for (int i = 0; i < finalMsgBuff.Length; i += bufferSize)
                 {
                     
                     retryCount = 0;
                     sendSuccess = false;
                     
-                    bool isLastChunk = i + bufferSize >= messageBuffer.Length;
-                    int chunkSize = isLastChunk ? messageBuffer.Length - i : bufferSize;
+                    bool isLastChunk = i + bufferSize >= finalMsgBuff.Length;
+                    int chunkSize = isLastChunk ? finalMsgBuff.Length - i : bufferSize;
                     byte[] chunkBuffer = new byte[chunkSize];
-                    Array.Copy(messageBuffer, i, chunkBuffer, 0, chunkSize);
+                    Array.Copy(finalMsgBuff, i, chunkBuffer, 0, chunkSize);
 
                     string chunkMessage = Encoding.ASCII.GetString(chunkBuffer);
 
